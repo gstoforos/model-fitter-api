@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: model-fitter-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python model_fitter.py
