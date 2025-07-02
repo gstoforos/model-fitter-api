@@ -1,115 +1,60 @@
-import sys, json
+from flask import Flask, request, jsonify
 import numpy as np
 from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 
-def fit_models(data):
-    g_dot = np.array(data["shear_rate"])
-    tau = np.array(data["shear_stress"])
-    gamma_wall = float(data["gamma_wall"])
-    rho = float(data["rho"])
-    v = float(data["velocity"])
-    d = float(data["diameter"])
+app = Flask(__name__)
 
-    models = []
+# Model fit functions
+def fit_newtonian(gamma_dot, sigma):
+    def model(gamma_dot, mu): return mu * gamma_dot
+    popt, _ = curve_fit(model, gamma_dot, sigma)
+    r2 = r2_score(sigma, model(gamma_dot, *popt))
+    return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2}
 
-    # Newtonian
-    def f1(g, mu): return mu * g
-    popt, _ = curve_fit(f1, g_dot, tau)
-    mu = popt[0]
-    models.append({
-        "Name": "Newtonian",
-        "Tau0": 0,
-        "K": mu,
-        "n": 1,
-        "R2": r_squared(tau, f1(g_dot, *popt)),
-        "Equation": f"σ = {mu:.4f}·γ̇",
-        "MuApp": mu,
-        "Re": rho * v * d / mu,
-        "Description": "Constant viscosity. Linear stress–strain rate relation."
-    })
+def fit_power_law(gamma_dot, sigma):
+    def model(gamma_dot, k, n): return k * gamma_dot**n
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    r2 = r2_score(sigma, model(gamma_dot, *popt))
+    return {'model': 'Power Law', 'k': popt[0], 'n': popt[1], 'r2': r2}
 
-    # Power-law
-    def f2(g, K, n): return K * g ** n
-    popt, _ = curve_fit(f2, g_dot, tau, bounds=(0, [np.inf, 10]))
-    K, n = popt
-    mu_app = K * gamma_wall ** (n - 1)
-    Re = rho * v * d / mu_app
-    models.append({
-        "Name": "Power-Law",
-        "Tau0": 0,
-        "K": K,
-        "n": n,
-        "R2": r_squared(tau, f2(g_dot, *popt)),
-        "Equation": f"σ = {K:.4f}·γ̇^{n:.3f}",
-        "MuApp": mu_app,
-        "Re": Re,
-        "Description": "Shear-thinning (n<1) or shear-thickening (n>1). No yield stress."
-    })
+def fit_herschel_bulkley(gamma_dot, sigma):
+    def model(gamma_dot, sigma0, k, n): return sigma0 + k * gamma_dot**n
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    r2 = r2_score(sigma, model(gamma_dot, *popt))
+    return {'model': 'Herschel–Bulkley', 'sigma0': popt[0], 'k': popt[1], 'n': popt[2], 'r2': r2}
 
-    # Herschel–Bulkley
-    def f3(g, tau0, K, n): return tau0 + K * g ** n
-    popt, _ = curve_fit(f3, g_dot, tau, bounds=(0, [1000, 1000, 10]))
-    tau0, K, n = popt
-    mu_app = (tau0 / gamma_wall) + K * gamma_wall ** (n - 1)
-    Re = rho * v * d / mu_app
-    models.append({
-        "Name": "Herschel–Bulkley",
-        "Tau0": tau0,
-        "K": K,
-        "n": n,
-        "R2": r_squared(tau, f3(g_dot, *popt)),
-        "Equation": f"σ = {tau0:.2f} + {K:.4f}·γ̇^{n:.3f}",
-        "MuApp": mu_app,
-        "Re": Re,
-        "Description": "Yield stress fluid with non-linear shear region. Generalized power-law."
-    })
+def fit_casson(gamma_dot, sigma):
+    def model(gamma_dot, sigma0, k): return (np.sqrt(sigma0) + np.sqrt(k * gamma_dot))**2
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    r2 = r2_score(sigma, model(gamma_dot, *popt))
+    return {'model': 'Casson', 'sigma0': popt[0], 'k': popt[1], 'r2': r2}
 
-    # Bingham
-    def f4(g, tau0, muP): return tau0 + muP * g
-    popt, _ = curve_fit(f4, g_dot, tau, bounds=(0, [1000, 1000]))
-    tau0, muP = popt
-    mu_app = (tau0 / gamma_wall) + muP
-    Re = rho * v * d / mu_app
-    models.append({
-        "Name": "Bingham Plastic",
-        "Tau0": tau0,
-        "K": muP,
-        "n": 1,
-        "R2": r_squared(tau, f4(g_dot, *popt)),
-        "Equation": f"σ = {tau0:.2f} + {muP:.4f}·γ̇",
-        "MuApp": mu_app,
-        "Re": Re,
-        "Description": "Has yield stress. Flows like Newtonian after yielding."
-    })
+def fit_bingham(gamma_dot, sigma):
+    def model(gamma_dot, sigma0, mu): return sigma0 + mu * gamma_dot
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    r2 = r2_score(sigma, model(gamma_dot, *popt))
+    return {'model': 'Bingham Plastic', 'sigma0': popt[0], 'mu': popt[1], 'r2': r2}
 
-    # Casson
-    def f5(g, tau0, K): return (np.sqrt(tau0) + np.sqrt(K * g)) ** 2
-    popt, _ = curve_fit(f5, g_dot, tau, bounds=(0, [1000, 1000]))
-    tau0, K = popt
-    mu_app = (tau0 / gamma_wall) + K * gamma_wall ** (-0.5)
-    Re = rho * v * d / mu_app
-    models.append({
-        "Name": "Casson",
-        "Tau0": tau0,
-        "K": K,
-        "n": 0.5,
-        "R2": r_squared(tau, f5(g_dot, *popt)),
-        "Equation": f"√σ = √{tau0:.2f} + √({K:.4f}·γ̇)",
-        "MuApp": mu_app,
-        "Re": Re,
-        "Description": "Empirical. Used in chocolate, blood, printing inks."
-    })
+def fit_all_models(gamma_dot, sigma):
+    fits = [
+        fit_newtonian(gamma_dot, sigma),
+        fit_power_law(gamma_dot, sigma),
+        fit_herschel_bulkley(gamma_dot, sigma),
+        fit_casson(gamma_dot, sigma),
+        fit_bingham(gamma_dot, sigma)
+    ]
+    return max(fits, key=lambda x: x['r2'])
 
-    return { "All": models }
+# API endpoint
+@app.route('/fit', methods=['POST'])
+def fit():
+    data = request.get_json()
+    gamma_dot = np.array(data['shear_rate'], dtype=float)
+    sigma = np.array(data['shear_stress'], dtype=float)
+    result = fit_all_models(gamma_dot, sigma)
+    return jsonify(result)
 
-def r_squared(y, y_pred):
-    ss_res = np.sum((y - y_pred) ** 2)
-    ss_tot = np.sum((y - np.mean(y)) ** 2)
-    return 1 - ss_res / ss_tot
-
-# === Entry point ===
-if __name__ == "__main__":
-    raw = sys.stdin.read()
-    inp = json.loads(raw)
-    result = fit_models(inp)
-    print(json.dumps(result))
+# Run app
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
