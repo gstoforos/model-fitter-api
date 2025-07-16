@@ -5,48 +5,54 @@ from sklearn.metrics import r2_score
 
 app = Flask(__name__)
 
-def fit_newtonian(gamma_dot, sigma):
-    def model(gamma_dot, mu): return mu * gamma_dot
-    popt, _ = curve_fit(model, gamma_dot, sigma)
-    return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+def safe_r2(y_true, y_pred):
+    try:
+        return r2_score(y_true, y_pred)
+    except:
+        return 0.0
 
-def fit_power_law(gamma_dot, sigma):
-    def model(gamma_dot, k, n): return k * gamma_dot**n
-    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Power Law', 'k': popt[0], 'n': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
-
-def fit_herschel_bulkley(gamma_dot, sigma):
-    def model(gamma_dot, sigma0, k, n): return sigma0 + k * gamma_dot**n
-    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Herschel–Bulkley', 'sigma0': popt[0], 'k': popt[1], 'n': popt[2], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
-
-def fit_casson(gamma_dot, sigma):
-    def model(gamma_dot, sigma0, k): return (np.sqrt(sigma0) + np.sqrt(k * gamma_dot))**2
-    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Casson', 'sigma0': popt[0], 'k': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
-
-def fit_bingham(gamma_dot, sigma):
-    def model(gamma_dot, sigma0, mu): return sigma0 + mu * gamma_dot
-    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Bingham Plastic', 'sigma0': popt[0], 'mu': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
-
-def fit_all_models(gamma_dot, sigma):
-    models = [
-        fit_newtonian(gamma_dot, sigma),
-        fit_power_law(gamma_dot, sigma),
-        fit_herschel_bulkley(gamma_dot, sigma),
-        fit_casson(gamma_dot, sigma),
-        fit_bingham(gamma_dot, sigma)
-    ]
-    return max(models, key=lambda m: m['r2'])
+def fit_model(name, func, gamma, tau, bounds=None, param_names=[]):
+    try:
+        popt, _ = curve_fit(func, gamma, tau, bounds=bounds if bounds else (-np.inf, np.inf))
+        pred = func(gamma, *popt)
+        result = {'model': name, 'r2': safe_r2(tau, pred)}
+        for i, pname in enumerate(param_names):
+            result[pname] = float(popt[i])
+        return result
+    except:
+        result = {'model': name, 'r2': 0.0}
+        for pname in param_names:
+            result[pname] = 0.0
+        return result
 
 @app.route('/fit', methods=['POST'])
 def fit():
-    data = request.get_json()
-    gamma_dot = np.array(data['shear_rate'], dtype=float)
-    sigma = np.array(data['shear_stress'], dtype=float)
-    result = fit_all_models(gamma_dot, sigma)
-    return jsonify(result)
+    try:
+        data = request.get_json()
+        gamma = np.array(data['shear_rates'], dtype=float)
+        tau = np.array(data['shear_stresses'], dtype=float)
+
+        models = []
+
+        models.append(fit_model("Newtonian", lambda g, mu: mu * g, gamma, tau, param_names=["k"]))
+        models[-1]["n"] = 1.0
+        models[-1]["tau0"] = 0.0
+
+        models.append(fit_model("Power Law", lambda g, k, n: k * g**n, gamma, tau, bounds=(0, np.inf), param_names=["k", "n"]))
+        models[-1]["tau0"] = 0.0
+
+        models.append(fit_model("Herschel-Bulkley", lambda g, tau0, k, n: tau0 + k * g**n, gamma, tau, bounds=(0, np.inf), param_names=["tau0", "k", "n"]))
+
+        models.append(fit_model("Casson", lambda g, tau0, k: (np.sqrt(tau0) + np.sqrt(k * g))**2, gamma, tau, bounds=(0, np.inf), param_names=["tau0", "k"]))
+        models[-1]["n"] = 0.5
+
+        models.append(fit_model("Bingham Plastic", lambda g, tau0, mu: tau0 + mu * g, gamma, tau, bounds=(0, np.inf), param_names=["tau0", "k"]))
+        models[-1]["n"] = 1.0
+
+        return jsonify({"all_models": models})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
