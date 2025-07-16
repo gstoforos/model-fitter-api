@@ -1,129 +1,117 @@
 from flask import Flask, request, jsonify
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from scipy.optimize import curve_fit
 
 app = Flask(__name__)
 
 def r_squared(y_true, y_pred):
-    ss_res = np.sum((y_true - y_pred) ** 2)
-    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    ss_res = np.sum((y_true - y_pred)**2)
+    ss_tot = np.sum((y_true - np.mean(y_true))**2)
     return 1 - ss_res / ss_tot if ss_tot != 0 else 0
 
-def model_newtonian(gamma, mu):
-    return mu * gamma
+def fit_newtonian(g, t):
+    model = LinearRegression(fit_intercept=False).fit(g.reshape(-1, 1), t)
+    mu = model.coef_[0]
+    pred = mu * g
+    return {"model": "Newtonian", "k": float(mu), "n": 1.0, "sigma0": 0.0, "r2": r_squared(t, pred)}
 
-def model_power_law(gamma, K, n):
-    return K * gamma ** n
+def fit_power_law(g, t):
+    log_g = np.log10(g)
+    log_t = np.log10(t)
+    model = LinearRegression().fit(log_g.reshape(-1, 1), log_t)
+    n = model.coef_[0]
+    log_k = model.intercept_
+    k = 10**log_k
+    pred = k * g**n
+    return {"model": "Power Law", "k": float(k), "n": float(n), "sigma0": 0.0, "r2": r_squared(t, pred)}
 
-def model_bingham(gamma, tau0, mu_p):
-    return tau0 + mu_p * gamma
+def fit_herschel_bulkley(g, t):
+    best = {"r2": -1}
+    for frac in np.linspace(0, 0.95, 20):
+        tau0 = np.min(t) * frac
+        mask = t > tau0 + 1e-6
+        if np.sum(mask) < 2:
+            continue
+        g_trim = g[mask]
+        t_trim = t[mask] - tau0
+        log_g = np.log10(g_trim)
+        log_t = np.log10(t_trim)
+        model = LinearRegression().fit(log_g.reshape(-1, 1), log_t)
+        n = model.coef_[0]
+        log_k = model.intercept_
+        k = 10**log_k
+        pred = tau0 + k * g**n
+        r2 = r_squared(t, pred)
+        if r2 > best['r2']:
+            best = {"model": "Herschel–Bulkley", "k": float(k), "n": float(n), "sigma0": float(tau0), "r2": r2}
+    return best
 
-def model_herschel_bulkley(gamma, tau0, K, n):
-    return tau0 + K * gamma ** n
+def fit_bingham(g, t):
+    model = LinearRegression().fit(g.reshape(-1, 1), t)
+    mu = model.coef_[0]
+    tau0 = model.intercept_
+    if tau0 < 0: tau0 = 0
+    pred = tau0 + mu * g
+    return {"model": "Bingham Plastic", "k": float(mu), "n": 1.0, "sigma0": float(tau0), "r2": r_squared(t, pred)}
 
-def model_casson(gamma, tau0, K):
-    return (np.sqrt(tau0) + np.sqrt(K * gamma)) ** 2
+def fit_casson(g, t):
+    best = {"r2": -1}
+    for frac in np.linspace(0, 0.95, 20):
+        tau0 = np.min(t) * frac
+        try:
+            s = np.sqrt(t) - np.sqrt(tau0)
+            x = np.sqrt(g).reshape(-1, 1)
+            model = LinearRegression().fit(x, s)
+            slope = model.coef_[0]
+            k = slope**2
+            pred = (np.sqrt(tau0) + np.sqrt(k * g))**2
+            r2 = r_squared(t, pred)
+            if r2 > best['r2']:
+                best = {"model": "Casson", "k": float(k), "n": 0.5, "sigma0": float(tau0), "r2": r2}
+        except:
+            continue
+    return best
 
 @app.route('/fit', methods=['POST'])
-def fit_models():
+def fit():
     try:
-        data = request.get_json()
-        gamma = np.array(data['shear_rate'], dtype=np.float64)
-        tau = np.array(data['shear_stress'], dtype=np.float64)
+        data = request.get_json(force=True)
+        gamma = np.array(data.get("shear_rates", []), dtype=float)
+        sigma = np.array(data.get("shear_stresses", []), dtype=float)
+        if len(gamma) < 2 or len(gamma) != len(sigma):
+            return jsonify({"error": "Invalid input"}), 400
 
-        models = {}
-
-        # 1. Newtonian
-        reg = LinearRegression()
-        reg.fit(gamma.reshape(-1, 1), tau)
-        pred = reg.predict(gamma.reshape(-1, 1))
-        models['Newtonian'] = {
-            'model': 'Newtonian',
-            'sigma0': 0,
-            'k': float(reg.coef_[0]),
-            'n': 1,
-            'r2': r_squared(tau, pred)
+        models = {
+            "Newtonian": fit_newtonian(gamma, sigma),
+            "Power Law": fit_power_law(gamma, sigma),
+            "Herschel–Bulkley": fit_herschel_bulkley(gamma, sigma),
+            "Bingham Plastic": fit_bingham(gamma, sigma),
+            "Casson": fit_casson(gamma, sigma)
         }
 
-        # 2. Power Law
-        try:
-            log_gamma = np.log(gamma)
-            log_tau = np.log(tau)
-            reg_pw = LinearRegression().fit(log_gamma.reshape(-1, 1), log_tau)
-            n_pw = float(reg_pw.coef_[0])
-            K_pw = float(np.exp(reg_pw.intercept_))
-            pred_pw = K_pw * gamma ** n_pw
-            models['Power-Law'] = {
-                'model': 'Power-Law',
-                'sigma0': 0,
-                'k': K_pw,
-                'n': n_pw,
-                'r2': r_squared(tau, pred_pw)
-            }
-        except:
-            pass
-
-        # 3. Bingham Plastic
-        try:
-            popt_b, _ = curve_fit(model_bingham, gamma, tau, bounds=(0, np.inf))
-            pred_b = model_bingham(gamma, *popt_b)
-            models['Bingham'] = {
-                'model': 'Bingham Plastic',
-                'sigma0': float(popt_b[0]),
-                'k': float(popt_b[1]),
-                'n': 1,
-                'r2': r_squared(tau, pred_b)
-            }
-        except:
-            pass
-
-        # 4. Herschel–Bulkley
-        try:
-            popt_hb, _ = curve_fit(model_herschel_bulkley, gamma, tau, bounds=(0, np.inf))
-            pred_hb = model_herschel_bulkley(gamma, *popt_hb)
-            models['Herschel–Bulkley'] = {
-                'model': 'Herschel–Bulkley',
-                'sigma0': float(popt_hb[0]),
-                'k': float(popt_hb[1]),
-                'n': float(popt_hb[2]),
-                'r2': r_squared(tau, pred_hb)
-            }
-        except:
-            pass
-
-        # 5. Casson
-        try:
-            popt_cas, _ = curve_fit(model_casson, gamma, tau, bounds=(0, np.inf))
-            pred_cas = model_casson(gamma, *popt_cas)
-            models['Casson'] = {
-                'model': 'Casson',
-                'sigma0': float(popt_cas[0]),
-                'k': float(popt_cas[1]),
-                'n': 0.5,
-                'r2': r_squared(tau, pred_cas)
-            }
-        except:
-            pass
-
         # Best-fit logic
-        best = max(models.values(), key=lambda m: m['r2'])
+        all_r2_1 = all(round(m['r2'], 8) == 1 for m in models.values())
+        if all_r2_1:
+            best = "Newtonian"
+        elif models["Bingham Plastic"]["r2"] >= 0.99 and models["Herschel–Bulkley"]["r2"] >= 0.99:
+            best = "Bingham Plastic"
+        elif models["Power Law"]["r2"] >= 0.99 and models["Herschel–Bulkley"]["r2"] >= 0.99:
+            best = "Power Law"
+        else:
+            best = max(models.items(), key=lambda x: x[1]['r2'])[0]
 
-        all_r2 = [m['r2'] for m in models.values()]
-        all_r2_high = all(r2 >= 0.99 for r2 in all_r2)
+        response = {
+            "model": best,
+            "Newtonian": models["Newtonian"],
+            "Power Law": models["Power Law"],
+            "Herschel–Bulkley": models["Herschel–Bulkley"],
+            "Bingham Plastic": models["Bingham Plastic"],
+            "Casson": models["Casson"]
+        }
+        return jsonify(response)
 
-        if all_r2_high and 'Newtonian' in models:
-            best = models['Newtonian']
-        elif 'Bingham' in models and 'Herschel–Bulkley' in models:
-            if models['Bingham']['r2'] >= 0.99 and models['Herschel–Bulkley']['r2'] >= 0.99:
-                best = models['Bingham']
-        elif 'Power-Law' in models and 'Herschel–Bulkley' in models:
-            if models['Power-Law']['r2'] >= 0.99 and models['Herschel–Bulkley']['r2'] >= 0.99:
-                best = models['Power-Law']
-
-        return jsonify(best)
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=10000)
