@@ -64,7 +64,23 @@ def fit_all_models(gamma_dot, sigma):
         fit_casson(gamma_dot, sigma),
         fit_bingham(gamma_dot, sigma)
     ]
-    best = max(models, key=lambda m: m['r2'])
+
+    # Extract models by name
+    model_dict = {m['model']: m for m in models}
+    r2_all = [m['r2'] for m in models]
+
+    # Rule 1: If all R² > 0.99 and Newtonian is included, choose Newtonian
+    if all(r2 > 0.99 for r2 in r2_all) and model_dict['Newtonian']['r2'] > 0.99:
+        best = model_dict['Newtonian']
+    # Rule 2: If both Bingham and Herschel–Bulkley have R² > 0.99, choose Bingham
+    elif model_dict['Bingham Plastic']['r2'] > 0.99 and model_dict['Herschel-Bulkley']['r2'] > 0.99:
+        best = model_dict['Bingham Plastic']
+    # Rule 3: If both Power Law and Herschel–Bulkley have R² > 0.99, choose Power Law
+    elif model_dict['Power Law']['r2'] > 0.99 and model_dict['Herschel-Bulkley']['r2'] > 0.99:
+        best = model_dict['Power Law']
+    else:
+        best = max(models, key=lambda m: m['r2'])
+
     return {'best_model': best, 'all_models': models}
 
 @app.route('/fit', methods=['POST'])
