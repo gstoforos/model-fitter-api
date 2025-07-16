@@ -1,150 +1,100 @@
-
 from flask import Flask, request, jsonify
-from scipy.optimize import curve_fit
 import numpy as np
+from scipy.optimize import curve_fit
 
 app = Flask(__name__)
 
 def r_squared(y_true, y_pred):
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
     ss_res = np.sum((y_true - y_pred) ** 2)
     ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
     return 1 - ss_res / ss_tot if ss_tot != 0 else 0
 
-# Rheological model functions
-def model_newtonian(g, mu): return mu * g
-def model_power(g, k, n): return k * g ** n
-def model_hb(g, tau0, k, n): return tau0 + k * g ** n
-def model_bingham(g, tau0, mu): return tau0 + mu * g
-def model_casson(g, tau0, k): return (np.sqrt(tau0) + np.sqrt(k * g)) ** 2
-
-@app.route("/fit", methods=["POST"])
+@app.route('/fit', methods=['POST'])
 def fit_models():
     try:
-        data = request.get_json()
-        gamma = np.array(data["shear_rates"], dtype=float)
-        tau = np.array(data["shear_stresses"], dtype=float)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        data = request.get_json(force=True)
+        gamma = np.array(data['shear_rates'], dtype=np.float64)
+        tau = np.array(data['shear_stresses'], dtype=np.float64)
 
-    results = {}
+        models = {}
 
-    # Newtonian
-    try:
-        popt, _ = curve_fit(model_newtonian, gamma, tau)
-        pred = model_newtonian(gamma, *popt)
-        results["Newtonian"] = {
-            "model": "Newtonian",
-            "tau0": 0,
-            "k": float(popt[0]),
-            "n": 1.0,
-            "r2": r_squared(tau, pred)
-        }
-    except:
-        results["Newtonian"] = {
-            "model": "Newtonian",
-            "tau0": 0, "k": 0, "n": 1.0, "r2": 0
-        }
+        def newtonian(g, mu): return mu * g
+        def power_law(g, K, n): return K * g**n
+        def herschel_bulkley(g, tau0, K, n): return tau0 + K * g**n
+        def bingham(g, tau0, mu): return tau0 + mu * g
+        def casson(g, tau0, K): return (np.sqrt(tau0) + np.sqrt(K * g))**2
 
-    # Power Law
-    try:
-        popt, _ = curve_fit(model_power, gamma, tau, bounds=(0, np.inf))
-        pred = model_power(gamma, *popt)
-        results["Power-Law"] = {
-            "model": "Power-Law",
-            "tau0": 0,
-            "k": float(popt[0]),
-            "n": float(popt[1]),
-            "r2": r_squared(tau, pred)
-        }
-    except:
-        results["Power-Law"] = {
-            "model": "Power-Law",
-            "tau0": 0, "k": 0, "n": 1.0, "r2": 0
-        }
+        # Newtonian
+        try:
+            popt, _ = curve_fit(newtonian, gamma, tau)
+            y_pred = newtonian(gamma, *popt)
+            models['Newtonian'] = {
+                'k': popt[0], 'n': 1, 'sigma0': 0,
+                'r2': r_squared(tau, y_pred)
+            }
+        except:
+            models['Newtonian'] = {'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
 
-    # Herschel–Bulkley
-    try:
-        popt, _ = curve_fit(model_hb, gamma, tau, bounds=(0, np.inf))
-        pred = model_hb(gamma, *popt)
-        results["Herschel-Bulkley"] = {
-            "model": "Herschel-Bulkley",
-            "tau0": float(popt[0]),
-            "k": float(popt[1]),
-            "n": float(popt[2]),
-            "r2": r_squared(tau, pred)
-        }
-    except:
-        results["Herschel-Bulkley"] = {
-            "model": "Herschel-Bulkley",
-            "tau0": 0, "k": 0, "n": 1.0, "r2": 0
-        }
+        # Power Law
+        try:
+            popt, _ = curve_fit(power_law, gamma, tau, bounds=(0, np.inf))
+            y_pred = power_law(gamma, *popt)
+            models['Power-Law'] = {
+                'k': popt[0], 'n': popt[1], 'sigma0': 0,
+                'r2': r_squared(tau, y_pred)
+            }
+        except:
+            models['Power-Law'] = {'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
 
-    # Bingham
-    try:
-        popt, _ = curve_fit(model_bingham, gamma, tau, bounds=(0, np.inf))
-        pred = model_bingham(gamma, *popt)
-        results["Bingham"] = {
-            "model": "Bingham",
-            "tau0": float(popt[0]),
-            "k": float(popt[1]),
-            "n": 1.0,
-            "r2": r_squared(tau, pred)
-        }
-    except:
-        results["Bingham"] = {
-            "model": "Bingham",
-            "tau0": 0, "k": 0, "n": 1.0, "r2": 0
-        }
+        # Herschel–Bulkley
+        try:
+            popt, _ = curve_fit(herschel_bulkley, gamma, tau, bounds=(0, np.inf))
+            y_pred = herschel_bulkley(gamma, *popt)
+            models['Herschel–Bulkley'] = {
+                'sigma0': popt[0], 'k': popt[1], 'n': popt[2],
+                'r2': r_squared(tau, y_pred)
+            }
+        except:
+            models['Herschel–Bulkley'] = {'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
 
-    # Casson
-    try:
-        popt, _ = curve_fit(model_casson, gamma, tau, bounds=(0, np.inf))
-        pred = model_casson(gamma, *popt)
-        results["Casson"] = {
-            "model": "Casson",
-            "tau0": float(popt[0]),
-            "k": float(popt[1]),
-            "n": 0.5,
-            "r2": r_squared(tau, pred)
-        }
-    except:
-        results["Casson"] = {
-            "model": "Casson",
-            "tau0": 0, "k": 0, "n": 0.5, "r2": 0
-        }
+        # Bingham
+        try:
+            popt, _ = curve_fit(bingham, gamma, tau)
+            y_pred = bingham(gamma, *popt)
+            models['Bingham Plastic'] = {
+                'sigma0': popt[0], 'k': popt[1], 'n': 1,
+                'r2': r_squared(tau, y_pred)
+            }
+        except:
+            models['Bingham Plastic'] = {'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
 
-    # Best model logic
-    r2s = {k: v["r2"] for k, v in results.items()}
-    best_model_name = max(r2s, key=r2s.get)
-    best_model = results[best_model_name]
+        # Casson
+        try:
+            popt, _ = curve_fit(casson, gamma, tau, bounds=(0, np.inf))
+            y_pred = casson(gamma, *popt)
+            models['Casson'] = {
+                'sigma0': popt[0], 'k': popt[1], 'n': 1,
+                'r2': r_squared(tau, y_pred)
+            }
+        except:
+            models['Casson'] = {'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
 
-    # Override rules
-    try:
-        all_r2 = list(r2s.values())
-        if all(r >= 0.99 for r in all_r2) and results["Newtonian"]["r2"] >= 0.99:
-            best_model = results["Newtonian"]
-        elif results["Bingham"]["r2"] >= 0.99 and results["Herschel-Bulkley"]["r2"] >= 0.99:
-            best_model = results["Bingham"]
-        elif results["Power-Law"]["r2"] >= 0.99 and results["Herschel-Bulkley"]["r2"] >= 0.99:
-            best_model = results["Power-Law"]
-    except:
-        pass
+        # Selection logic
+        r2_values = {m: v['r2'] for m, v in models.items()}
+        best_model = max(r2_values, key=r2_values.get)
 
-    return jsonify({
-        "best_model": best_model,
-        "all_models": results
-    })
+        all_r2_high = all(v['r2'] >= 0.99 for v in models.values())
+        if all_r2_high and 'Newtonian' in models:
+            best_model = 'Newtonian'
+        elif models['Bingham Plastic']['r2'] >= 0.99 and models['Herschel–Bulkley']['r2'] >= 0.99:
+            best_model = 'Bingham Plastic'
+        elif models['Power-Law']['r2'] >= 0.99 and models['Herschel–Bulkley']['r2'] >= 0.99:
+            best_model = 'Power-Law'
 
-@app.route('/fit', methods=['POST'])
-def fit():
-    try:
-        data = request.get_json()
-        gamma_dot = np.array(data['shear_rates'], dtype=float)
-        sigma = np.array(data['shear_stresses'], dtype=float)
-        result = fit_all_models(gamma_dot, sigma)
-        return jsonify(result)
+        response = models[best_model].copy()
+        response['model'] = best_model
+        return jsonify(response)
+
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
