@@ -9,12 +9,8 @@ logging.basicConfig(level=logging.INFO)
 
 def fit_newtonian(gamma_dot, sigma):
     def model(gamma_dot, mu): return mu * gamma_dot
-    try:
-        popt, _ = curve_fit(model, gamma_dot, sigma)
-        return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
-    except Exception as e:
-        logging.error(f"Newtonian fit failed: {e}")
-        return {'model': 'Newtonian', 'mu': None, 'r2': 0}
+    popt, _ = curve_fit(model, gamma_dot, sigma)
+    return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
 
 def fit_power_law(gamma_dot, sigma):
     def model(gamma_dot, k, n): return k * gamma_dot**n
@@ -37,19 +33,35 @@ def fit_bingham(gamma_dot, sigma):
     return {'model': 'Bingham Plastic', 'sigma0': popt[0], 'mu': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
 
 def fit_all_models(gamma_dot, sigma):
+    def safe_call(fit_func):
+        try:
+            result = fit_func(gamma_dot, sigma)
+            # Ensure all expected keys exist, even if not used by the model
+            result.setdefault('mu', 0.0)
+            result.setdefault('k', 0.0)
+            result.setdefault('n', 1.0)
+            result.setdefault('sigma0', 0.0)
+            result['r2'] = result.get('r2') if result.get('r2') is not None else 0.0
+            return result
+        except Exception as e:
+            logging.error(f"{fit_func.__name__} failed: {e}")
+            return {
+                'model': fit_func.__name__.replace('fit_', '').replace('_', ' ').title(),
+                'mu': 0.0,
+                'k': 0.0,
+                'n': 1.0,
+                'sigma0': 0.0,
+                'r2': 0.0
+            }
+
     models = [
-        fit_newtonian(gamma_dot, sigma),
-        fit_power_law(gamma_dot, sigma),
-        fit_herschel_bulkley(gamma_dot, sigma),
-        fit_casson(gamma_dot, sigma),
-        fit_bingham(gamma_dot, sigma)
+        safe_call(fit_newtonian),
+        safe_call(fit_power_law),
+        safe_call(fit_herschel_bulkley),
+        safe_call(fit_casson),
+        safe_call(fit_bingham)
     ]
-    # Filter out models with invalid R²
-    valid_models = [m for m in models if m['r2'] is not None and not np.isnan(m['r2'])]
-    if not valid_models:
-        logging.error("All model fits failed.")
-        return {'model': 'None', 'r2': 0}
-    return max(valid_models, key=lambda m: m['r2'])
+    return max(models, key=lambda m: m['r2'])
 
 @app.route('/fit', methods=['POST'])
 def fit():
