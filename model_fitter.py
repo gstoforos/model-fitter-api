@@ -5,88 +5,92 @@ from sklearn.metrics import r2_score
 
 app = Flask(__name__)
 
-def r_squared(y_true, y_pred):
-    ss_res = np.sum((np.array(y_true) - np.array(y_pred)) ** 2)
-    ss_tot = np.sum((np.array(y_true) - np.mean(y_true)) ** 2)
-    return 1 - ss_res / ss_tot if ss_tot != 0 else 1
+def fit_newtonian(gamma_dot, sigma):
+    def model(gamma_dot, mu): return mu * gamma_dot
+    popt, _ = curve_fit(model, gamma_dot, sigma)
+    return {
+        'model': 'Newtonian',
+        'tau0': 0,
+        'k': float(popt[0]),
+        'n': 1.0,
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
+
+def fit_power_law(gamma_dot, sigma):
+    def model(gamma_dot, k, n): return k * gamma_dot**n
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    return {
+        'model': 'Power-Law',
+        'tau0': 0,
+        'k': float(popt[0]),
+        'n': float(popt[1]),
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
+
+def fit_herschel_bulkley(gamma_dot, sigma):
+    def model(gamma_dot, tau0, k, n): return tau0 + k * gamma_dot**n
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    return {
+        'model': 'Herschel-Bulkley',
+        'tau0': float(popt[0]),
+        'k': float(popt[1]),
+        'n': float(popt[2]),
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
+
+def fit_bingham(gamma_dot, sigma):
+    def model(gamma_dot, tau0, mu): return tau0 + mu * gamma_dot
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    return {
+        'model': 'Bingham',
+        'tau0': float(popt[0]),
+        'k': float(popt[1]),
+        'n': 1.0,
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
+
+def fit_casson(gamma_dot, sigma):
+    def model(gamma_dot, tau0, k): return (np.sqrt(tau0) + np.sqrt(k * gamma_dot))**2
+    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
+    return {
+        'model': 'Casson',
+        'tau0': float(popt[0]),
+        'k': float(popt[1]),
+        'n': 0.5,
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
+
+def fit_all_models(gamma_dot, sigma):
+    models = []
+
+    try: models.append(fit_newtonian(gamma_dot, sigma))
+    except: pass
+    try: models.append(fit_power_law(gamma_dot, sigma))
+    except: pass
+    try: models.append(fit_herschel_bulkley(gamma_dot, sigma))
+    except: pass
+    try: models.append(fit_bingham(gamma_dot, sigma))
+    except: pass
+    try: models.append(fit_casson(gamma_dot, sigma))
+    except: pass
+
+    if not models:
+        return {'error': 'No model could be fitted'}
+
+    best = max(models, key=lambda m: m['r2'])
+    return {
+        'best_model': best,
+        'all_models': models
+    }
 
 @app.route('/fit', methods=['POST'])
-def fit_models():
+def fit():
     try:
-        data = request.get_json(force=True)
-        gamma = np.array(data['shear_rate'], dtype=np.float64)
-        tau = np.array(data['shear_stress'], dtype=np.float64)
-
-        models = {}
-
-        # Newtonian: τ = μ * γ̇
-        def newtonian(g, mu): return mu * g
-        try:
-            popt, _ = curve_fit(newtonian, gamma, tau)
-            y_pred = newtonian(gamma, *popt)
-            models['Newtonian'] = {
-                'model': 'Newtonian',
-                'k': float(popt[0]), 'n': 1, 'sigma0': 0,
-                'r2': r_squared(tau, y_pred)
-            }
-        except:
-            models['Newtonian'] = {'model': 'Newtonian', 'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
-
-        # Power Law: τ = K * γ̇^n
-        def power_law(g, k, n): return k * g ** n
-        try:
-            popt, _ = curve_fit(power_law, gamma, tau, bounds=(0, np.inf))
-            y_pred = power_law(gamma, *popt)
-            models['Power-Law'] = {
-                'model': 'Power-Law',
-                'k': float(popt[0]), 'n': float(popt[1]), 'sigma0': 0,
-                'r2': r_squared(tau, y_pred)
-            }
-        except:
-            models['Power-Law'] = {'model': 'Power-Law', 'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
-
-        # Herschel–Bulkley: τ = τ₀ + K * γ̇^n
-        def herschel_bulkley(g, tau0, k, n): return tau0 + k * g ** n
-        try:
-            popt, _ = curve_fit(herschel_bulkley, gamma, tau, bounds=(0, np.inf))
-            y_pred = herschel_bulkley(gamma, *popt)
-            models['Herschel–Bulkley'] = {
-                'model': 'Herschel–Bulkley',
-                'sigma0': float(popt[0]), 'k': float(popt[1]), 'n': float(popt[2]),
-                'r2': r_squared(tau, y_pred)
-            }
-        except:
-            models['Herschel–Bulkley'] = {'model': 'Herschel–Bulkley', 'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
-
-        # Bingham: τ = τ₀ + μ * γ̇
-        def bingham(g, tau0, mu): return tau0 + mu * g
-        try:
-            popt, _ = curve_fit(bingham, gamma, tau, bounds=(0, np.inf))
-            y_pred = bingham(gamma, *popt)
-            models['Bingham Plastic'] = {
-                'model': 'Bingham Plastic',
-                'sigma0': float(popt[0]), 'k': float(popt[1]), 'n': 1,
-                'r2': r_squared(tau, y_pred)
-            }
-        except:
-            models['Bingham Plastic'] = {'model': 'Bingham Plastic', 'k': 0, 'n': 1, 'sigma0': 0, 'r2': 0}
-
-        # Casson: τ = (√τ₀ + √(K * γ̇))²
-        def casson(g, tau0, k): return (np.sqrt(tau0) + np.sqrt(k * g)) ** 2
-        try:
-            popt, _ = curve_fit(casson, gamma, tau, bounds=(0, np.inf))
-            y_pred = casson(gamma, *popt)
-            models['Casson'] = {
-                'model': 'Casson',
-                'sigma0': float(popt[0]), 'k': float(popt[1]), 'n': 0.5,
-                'r2': r_squared(tau, y_pred)
-            }
-        except:
-            models['Casson'] = {'model': 'Casson', 'k': 0, 'n': 0.5, 'sigma0': 0, 'r2': 0}
-
-        # Return all models (let frontend or app decide best fit)
-        return jsonify(models)
-
+        data = request.get_json()
+        gamma_dot = np.array(data['shear_rates'], dtype=float)
+        sigma = np.array(data['shear_stresses'], dtype=float)
+        result = fit_all_models(gamma_dot, sigma)
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
