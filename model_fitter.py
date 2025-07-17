@@ -13,10 +13,24 @@ def fit_newtonian(gamma_dot, sigma):
         popt, _ = curve_fit(model, gamma_dot, sigma)
         mu = popt[0]
         r2 = r2_score(sigma, model(gamma_dot, mu))
-        return {'model': 'Newtonian', 'sigma0': 0.0, 'k': mu, 'n': 1.0, 'mu': mu, 'r2': r2}
+        return {
+            'model': 'Newtonian',
+            'sigma0': 0.0,
+            'k': 1.0,
+            'n': 1.0,
+            'mu': mu,
+            'r2': r2
+        }
     except Exception as e:
         logging.error(f"Newtonian fit failed: {e}")
-        return {'model': 'Newtonian', 'sigma0': 0.0, 'k': 1.0, 'n': 1.0, 'mu': 1.0, 'r2': 0.0}
+        return {
+            'model': 'Newtonian',
+            'sigma0': 0.000001,
+            'k': 0.000001,
+            'n': 0.000001,
+            'mu': None,
+            'r2': 0.0
+        }
 
 def fit_power_law(gamma_dot, sigma):
     def model(gamma_dot, k, n): return k * gamma_dot**n
@@ -24,10 +38,24 @@ def fit_power_law(gamma_dot, sigma):
         popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
         k, n = popt
         r2 = r2_score(sigma, model(gamma_dot, k, n))
-        return {'model': 'Power Law', 'sigma0': 0.0, 'k': k, 'n': n, 'mu': 1.0, 'r2': r2}
+        return {
+            'model': 'Power Law',
+            'sigma0': 0.0,
+            'k': k,
+            'n': n,
+            'mu': 1.0,
+            'r2': r2
+        }
     except Exception as e:
         logging.error(f"Power Law fit failed: {e}")
-        return {'model': 'Power Law', 'sigma0': 0.0, 'k': 1.0, 'n': 1.0, 'mu': 1.0, 'r2': 0.0}
+        return {
+            'model': 'Power Law',
+            'sigma0': 0.0,
+            'k': 1.0,
+            'n': 1.0,
+            'mu': 1.0,
+            'r2': 0.0
+        }
 
 def fit_herschel_bulkley(gamma_dot, sigma):
     def model(gamma_dot, sigma0, k, n): return sigma0 + k * gamma_dot**n
@@ -35,10 +63,24 @@ def fit_herschel_bulkley(gamma_dot, sigma):
         popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
         sigma0, k, n = popt
         r2 = r2_score(sigma, model(gamma_dot, sigma0, k, n))
-        return {'model': 'Herschel–Bulkley', 'sigma0': sigma0, 'k': k, 'n': n, 'mu': 1.0, 'r2': r2}
+        return {
+            'model': 'Herschel–Bulkley',
+            'sigma0': sigma0,
+            'k': k,
+            'n': n,
+            'mu': 1.0,
+            'r2': r2
+        }
     except Exception as e:
         logging.error(f"Herschel–Bulkley fit failed: {e}")
-        return {'model': 'Herschel–Bulkley', 'sigma0': 0.0, 'k': 1.0, 'n': 1.0, 'mu': 1.0, 'r2': 0.0}
+        return {
+            'model': 'Herschel–Bulkley',
+            'sigma0': 0.0,
+            'k': 1.0,
+            'n': 1.0,
+            'mu': 1.0,
+            'r2': 0.0
+        }
 
 def fit_casson(gamma_dot, sigma):
     def model(gamma_dot, sigma0, k): return (np.sqrt(sigma0) + np.sqrt(k * gamma_dot))**2
@@ -46,10 +88,24 @@ def fit_casson(gamma_dot, sigma):
         popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
         sigma0, k = popt
         r2 = r2_score(sigma, model(gamma_dot, sigma0, k))
-        return {'model': 'Casson', 'sigma0': sigma0, 'k': k, 'n': 1.0, 'mu': 1.0, 'r2': r2}
+        return {
+            'model': 'Casson',
+            'sigma0': sigma0,
+            'k': k,
+            'n': 1.0,
+            'mu': 1.0,
+            'r2': r2
+        }
     except Exception as e:
         logging.error(f"Casson fit failed: {e}")
-        return {'model': 'Casson', 'sigma0': 0.0, 'k': 1.0, 'n': 1.0, 'mu': 1.0, 'r2': 0.0}
+        return {
+            'model': 'Casson',
+            'sigma0': 0.0,
+            'k': 1.0,
+            'n': 1.0,
+            'mu': 1.0,
+            'r2': 0.0
+        }
 
 def fit_bingham(gamma_dot, sigma):
     def model(gamma_dot, sigma0, mu): return sigma0 + mu * gamma_dot
@@ -57,10 +113,24 @@ def fit_bingham(gamma_dot, sigma):
         popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
         sigma0, mu = popt
         r2 = r2_score(sigma, model(gamma_dot, sigma0, mu))
-        return {'model': 'Bingham Plastic', 'sigma0': sigma0, 'k': mu, 'n': 1.0, 'mu': mu, 'r2': r2}
+        return {
+            'model': 'Bingham Plastic',
+            'sigma0': sigma0,
+            'k': mu,   # use k = mu for consistency
+            'n': 1.0,
+            'mu': mu,
+            'r2': r2
+        }
     except Exception as e:
         logging.error(f"Bingham Plastic fit failed: {e}")
-        return {'model': 'Bingham Plastic', 'sigma0': 0.0, 'k': 1.0, 'n': 1.0, 'mu': 1.0, 'r2': 0.0}
+        return {
+            'model': 'Bingham Plastic',
+            'sigma0': 0.0,
+            'k': 1.0,
+            'n': 1.0,
+            'mu': 1.0,
+            'r2': 0.0
+        }
 
 @app.route('/fit', methods=['POST'])
 def fit():
