@@ -53,19 +53,28 @@ def fit_bingham(gamma_dot, sigma):
     return {'model': 'Bingham Plastic', 'sigma0': popt[0], 'mu': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
 
 def fit_all_models(gamma_dot, sigma):
-    models = [
-        fit_newtonian(gamma_dot, sigma),
-        fit_power_law(gamma_dot, sigma),
-        fit_herschel_bulkley(gamma_dot, sigma),
-        fit_casson(gamma_dot, sigma),
-        fit_bingham(gamma_dot, sigma)
-    ]
-    # Filter out models with invalid R²
+    newtonian = fit_newtonian(gamma_dot, sigma)
+    power_law = fit_power_law(gamma_dot, sigma)
+    hb = fit_herschel_bulkley(gamma_dot, sigma)
+    casson = fit_casson(gamma_dot, sigma)
+    bingham = fit_bingham(gamma_dot, sigma)
+
+    models = [newtonian, power_law, hb, casson, bingham]
     valid_models = [m for m in models if m['r2'] is not None and not np.isnan(m['r2'])]
+
     if not valid_models:
         logging.error("All model fits failed.")
         return {'model': 'None', 'r2': 0}
-    return max(valid_models, key=lambda m: m['r2'])
+
+    # Override logic
+    if all(m['r2'] > 0.99 for m in [newtonian, power_law, hb, casson, bingham]):
+        return newtonian
+    elif power_law['r2'] > 0.97 and hb['r2'] > 0.97:
+        return power_law
+    elif bingham['r2'] > 0.97 and hb['r2'] > 0.97:
+        return bingham
+    else:
+        return max(valid_models, key=lambda m: m['r2'])
 
 @app.route('/fit', methods=['POST'])
 def fit():
