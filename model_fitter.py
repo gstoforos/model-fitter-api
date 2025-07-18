@@ -64,17 +64,26 @@ def fit_all_models(gamma_dot, sigma):
 
     if not valid_models:
         logging.error("All model fits failed.")
-        return {'model': 'None', 'r2': 0}
+        return {'model': 'None', 'r2': 0.0}
 
-    # Override logic
-    if all(m['r2'] > 0.99 for m in [newtonian, power_law, hb, casson, bingham]):
+    # Rule 1: All R² > 0.99 → Newtonian
+    if all(m['r2'] > 0.99 for m in models):
         return newtonian
-    elif power_law['r2'] > 0.97 and hb['r2'] > 0.97:
+
+    # Rule 2: Power Law vs HB
+    if (power_law['r2'] > 0.97 and
+        abs(power_law['r2'] - hb['r2']) < 0.01 and
+        power_law['r2'] >= max(m['r2'] for m in models if m['model'] not in ['Herschel–Bulkley'])):
         return power_law
-    elif bingham['r2'] > 0.97 and hb['r2'] > 0.97:
+
+    # Rule 3: Bingham vs HB
+    if (bingham['r2'] > 0.97 and
+        abs(bingham['r2'] - hb['r2']) < 0.01 and
+        bingham['r2'] >= max(m['r2'] for m in models if m['model'] not in ['Herschel–Bulkley'])):
         return bingham
-    else:
-        return max(valid_models, key=lambda m: m['r2'])
+
+    # Rule 4: Fallback → best R²
+    return max(valid_models, key=lambda m: m['r2'])
 
 @app.route('/fit', methods=['POST'])
 def fit():
