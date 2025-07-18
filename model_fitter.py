@@ -17,20 +17,11 @@ def fit_newtonian(gamma_dot, sigma):
             'model': 'Newtonian',
             'sigma0': 0.0,
             'k': mu,
-            'n': None,
+            'n': 1,
             'mu': mu,
             'r2': r2
         }
-    except Exception as e:
-        logging.error(f"Newtonian fit failed: {e}")
-        return {
-            'model': 'Newtonian',
-            'sigma0': 0.000001,
-            'k': 0.000001,
-            'n': 0.000001,
-            'mu': None,
-            'r2': 0.0
-        }
+   
 
 def fit_power_law(gamma_dot, sigma):
     def model(gamma_dot, k, n): return k * gamma_dot**n
