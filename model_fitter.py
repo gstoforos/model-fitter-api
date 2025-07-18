@@ -17,7 +17,7 @@ def fit_newtonian(gamma_dot, sigma):
             'model': 'Newtonian',
             'sigma0': 0.0,
             'k': mu,
-            'n': none,
+            'n': 'None',
             'mu': mu,
             'r2': r2
         }
