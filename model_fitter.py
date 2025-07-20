@@ -124,6 +124,20 @@ def fit_bingham(gamma_dot, sigma):
             'r2': 0.0
         }
 
+def fit():
+    try:
+        data = request.get_json()
+        gamma_dot = np.array(data['shear_rate'], dtype=float)
+        sigma = np.array(data['shear_stress'], dtype=float)
+
+        models = [
+            fit_newtonian(gamma_dot, sigma),
+            fit_power_law(gamma_dot, sigma),
+            fit_herschel_bulkley(gamma_dot, sigma),
+            fit_casson(gamma_dot, sigma),
+            fit_bingham(gamma_dot, sigma)
+        ]
+
 def select_best_model(models):
     valid = [m for m in models if m['r2'] is not None and not np.isnan(m['r2'])]
 
@@ -154,24 +168,12 @@ def fit():
         data = request.get_json()
         gamma_dot = np.array(data['shear_rate'], dtype=float)
         sigma = np.array(data['shear_stress'], dtype=float)
-
-        models = [
-            fit_newtonian(gamma_dot, sigma),
-            fit_power_law(gamma_dot, sigma),
-            fit_herschel_bulkley(gamma_dot, sigma),
-            fit_casson(gamma_dot, sigma),
-            fit_bingham(gamma_dot, sigma)
-        ]
-
-        best = select_best_model(models)
-        return jsonify({
-            'best_model': best,
-            'all_models': models
-        })
-
+        result = fit_all_models(gamma_dot, sigma)
+        return jsonify(result)
     except Exception as e:
-        logging.error(f"Request failed: {e}")
+        logging.error(f"Failed to process request: {e}")
         return jsonify({'error': str(e)}), 400
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
