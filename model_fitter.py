@@ -1,18 +1,14 @@
-from flask import Flask, request, jsonify 
+from flask import Flask, request, jsonify
 import numpy as np
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
-import logging
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
 
 def fit_newtonian(gamma_dot, sigma):
     def model(gamma_dot, mu): return mu * gamma_dot
-    try:
-        popt, _ = curve_fit(model, gamma_dot, sigma)
-        return {'model': 'Newtonian', 'mu': popt[0], 'k':'mu', 'r2': r2_score(sigma, model(gamma_dot, *popt))}
-            
+    popt, _ = curve_fit(model, gamma_dot, sigma)
+    return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
 
 def fit_power_law(gamma_dot, sigma):
     def model(gamma_dot, k, n): return k * gamma_dot**n
@@ -42,12 +38,7 @@ def fit_all_models(gamma_dot, sigma):
         fit_casson(gamma_dot, sigma),
         fit_bingham(gamma_dot, sigma)
     ]
-    # Filter out models with invalid R²
-    valid_models = [m for m in models if m['r2'] is not None and not np.isnan(m['r2'])]
-    if not valid_models:
-        logging.error("All model fits failed.")
-        return {'model': 'None', 'r2': 0}
-    return max(valid_models, key=lambda m: m['r2'])
+    return max(models, key=lambda m: m['r2'])
 
 @app.route('/fit', methods=['POST'])
 def fit():
