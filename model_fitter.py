@@ -1,4 +1,4 @@
-import Flask, request, jsonify
+from flask import Flask, request, jsonify
 import numpy as np
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
