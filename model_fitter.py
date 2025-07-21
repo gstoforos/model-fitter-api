@@ -29,10 +29,44 @@ def fit_newtonian(gamma_dot, sigma, Q=1, D=1, rho=1):
         'equation': f"σ = {mu:.4g}·γ̇"
     }
 
-def fit_power_law(gamma_dot, sigma):
-    def model(gamma_dot, k, n): return k * gamma_dot**n
-    popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Power Law', 'k': popt[0], 'n': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    # Power Law model
+    try:
+        def power_law_model(gamma, k, n):
+            return k * gamma**n
+
+        popt_power, _ = curve_fit(power_law_model, gamma, sigma, bounds=(0, [np.inf, np.inf]))
+        k_power, n_power = popt_power
+        sigma_pred_power = power_law_model(gamma, k_power, n_power)
+        r2_power = r2_score(sigma, sigma_pred_power)
+
+        mu_app_power = k_power * np.mean(gamma) ** (n_power - 1)
+
+        if flow_rate != 1 and diameter != 1 and density != 1:
+            Re_power = (8 * density * flow_rate) / (math.pi * diameter * mu_app_power)
+        else:
+            Re_power = None
+
+        models["Power Law"] = {
+            "mu": None,
+            "k": k_power,
+            "n": n_power,
+            "tau0": 0.0,
+            "r2": r2_power,
+            "mu_app": mu_app_power,
+            "Re": Re_power,
+            "equation": f"σ = {k_power:.3f} γ̇^{n_power:.3f}"
+        }
+    except:
+        models["Power Law"] = {
+            "mu": None,
+            "k": None,
+            "n": None,
+            "tau0": 0.0,
+            "r2": 0.0,
+            "mu_app": None,
+            "Re": None,
+            "equation": "N/A"
+        }
 
 def fit_herschel_bulkley(gamma_dot, sigma):
     def model(gamma_dot, sigma0, k, n): return sigma0 + k * gamma_dot**n
