@@ -29,48 +29,40 @@ def fit_newtonian(gamma_dot, sigma, Q=1, D=1, rho=1):
         'equation': f"σ = {mu:.4g}·γ̇"
     }
 
-       # Power Law model
+      # Power Law
     try:
-        gamma_positive = gamma[gamma > 0]
-        sigma_positive = sigma[gamma > 0]
-
-        def power_law_model(gamma, k, n):
-            return k * gamma**n
-
-        popt_power, _ = curve_fit(power_law_model, gamma_positive, sigma_positive, bounds=(0, [np.inf, np.inf]))
-        k_power, n_power = popt_power
-        sigma_pred_power = power_law_model(gamma_positive, k_power, n_power)
-        r2_power = r2_score(sigma_positive, sigma_pred_power)
-
-        mu_app_power = k_power * np.mean(gamma_positive) ** (n_power - 1)
-
+        def power(g, k, n): return k * g**n
+        popt, _ = curve_fit(power, gamma, sigma, bounds=(0, [np.inf, np.inf]))
+        k, n = popt
+        sigma_fit = power(gamma, k, n)
+        r2 = r2_score(sigma, sigma_fit)
+        mu_app = k * np.mean(gamma) ** (n - 1)
         if flow_rate != 1 and diameter != 1 and density != 1:
-            Re_power = (8 * density * flow_rate) / (math.pi * diameter * mu_app_power)
+            Re = (8 * density * flow_rate) / (math.pi * diameter * mu_app)
         else:
-            Re_power = None
-
+            Re = None
         models["Power Law"] = {
             "mu": None,
-            "k": k_power,
-            "n": n_power,
-            "tau0": 0.0,
-            "r2": r2_power,
-            "mu_app": mu_app_power,
-            "Re": Re_power,
-            "equation": f"σ = {k_power:.3f} γ̇^{n_power:.3f}"
+            "k": k,
+            "n": n,
+            "tau0": 0,
+            "r2": r2,
+            "mu_app": mu_app,
+            "Re": Re,
+            "equation": f"σ = {k:.3f} γ̇^{n:.3f}"
         }
-    except Exception as e:
-        print("Power Law fit failed:", str(e))
+    except:
         models["Power Law"] = {
             "mu": None,
             "k": None,
             "n": None,
-            "tau0": 0.0,
-            "r2": 0.0,
+            "tau0": 0,
+            "r2": 0,
             "mu_app": None,
             "Re": None,
             "equation": "N/A"
         }
+
 
 
 def fit_herschel_bulkley(gamma_dot, sigma):
