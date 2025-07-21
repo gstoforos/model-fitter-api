@@ -31,6 +31,8 @@ def fit_newtonian(gamma_dot, sigma, Q=1, D=1, rho=1):
 
     # (previous code unchanged)
 
+# (previous code unchanged)
+
 # Power Law
 try:
     def power(g, k, n): return k * g**n
@@ -39,14 +41,15 @@ try:
     sigma_fit = power(gamma, k, n)
     r2 = r2_score(sigma, sigma_fit)
     mu_app = k * np.mean(gamma) ** (n - 1)
-        models["Power Law"] = {
+    Re = None  # ← removed Reynolds calculation for Power Law
+    models["Power Law"] = {
         "mu": None,
         "k": k,
         "n": n,
         "tau0": 0,
         "r2": r2,
         "mu_app": mu_app,
-    
+        "Re": Re,
         "equation": f"σ = {k:.3f} γ̇^{n:.3f}"
     }
 except:
@@ -60,6 +63,8 @@ except:
         "Re": None,
         "equation": "N/A"
     }
+
+# (rest of models unchanged)
 
     
 
