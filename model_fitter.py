@@ -65,6 +65,15 @@ def fit_casson(gamma_dot, sigma):
         'r2': r2_score(sigma, model(gamma_dot, *popt))
     }
 
+def fit_all_models(gamma_dot, sigma):
+    return [
+        fit_newtonian(gamma_dot, sigma),
+        fit_power_law(gamma_dot, sigma),
+        fit_herschel_bulkley(gamma_dot, sigma),
+        fit_casson(gamma_dot, sigma),
+        fit_bingham(gamma_dot, sigma)
+    ]
+
 def select_best_model(models):
     r2s = {m['model']: m['r2'] for m in models}
     ranked = sorted(models, key=lambda m: m['r2'], reverse=True)
@@ -94,13 +103,7 @@ def fit():
         gamma_dot = np.array(data['shear_rates'], dtype=float)
         sigma = np.array(data['shear_stresses'], dtype=float)
 
-        models = [
-            fit_newtonian(gamma_dot, sigma),
-            fit_power_law(gamma_dot, sigma),
-            fit_bingham(gamma_dot, sigma),
-            fit_herschel_bulkley(gamma_dot, sigma),
-            fit_casson(gamma_dot, sigma),
-        ]
+        models = fit_all_models(gamma_dot, sigma)
         best_model = select_best_model(models)
 
         return jsonify({
@@ -110,7 +113,7 @@ def fit():
 
     except Exception as e:
         import traceback
-        print(traceback.format_exc())  # Log full error for debugging
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
