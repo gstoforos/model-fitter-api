@@ -34,14 +34,15 @@ def fit_newtonian(gamma_dot, sigma, Q=1, D=1, rho=1):
 # (previous code unchanged)
 
 # Power Law
+# Power Law
 try:
-    def power(g, k, n): return k * g**n
-    popt, _ = curve_fit(power, gamma, sigma, bounds=(0, [np.inf, np.inf]))
+    def power(g_dot, k, n): return k * g_dot ** n
+    popt, _ = curve_fit(power, gamma_dot, sigma, bounds=(0, [np.inf, np.inf]))
     k, n = popt
-    sigma_fit = power(gamma, k, n)
+    sigma_fit = power(gamma_dot, k, n)
     r2 = r2_score(sigma, sigma_fit)
-    mu_app = k * np.mean(gamma) ** (n - 1)
-    Re = None  # ← removed Reynolds calculation for Power Law
+    mu_app = k * np.mean(gamma_dot) ** (n - 1)
+
     models["Power Law"] = {
         "mu": None,
         "k": k,
@@ -49,7 +50,7 @@ try:
         "tau0": 0,
         "r2": r2,
         "mu_app": mu_app,
-        "Re": Re,
+        "Re": None,
         "equation": f"σ = {k:.3f} γ̇^{n:.3f}"
     }
 except:
@@ -63,8 +64,6 @@ except:
         "Re": None,
         "equation": "N/A"
     }
-
-# (rest of models unchanged)
 
     
 
