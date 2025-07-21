@@ -2,13 +2,32 @@ from flask import Flask, request, jsonify
 import numpy as np
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
+from math import pi
 
 app = Flask(__name__)
 
-def fit_newtonian(gamma_dot, sigma):
+def fit_newtonian(gamma_dot, sigma, Q=1, D=1, rho=1):
     def model(gamma_dot, mu): return mu * gamma_dot
     popt, _ = curve_fit(model, gamma_dot, sigma)
-    return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    mu = popt[0]
+    r2 = r2_score(sigma, model(gamma_dot, *popt))
+
+    idx = len(gamma_dot) // 2
+    mu_app = sigma[idx] / gamma_dot[idx] if gamma_dot[idx] != 0 else mu
+
+    # Reynolds calculation
+    area = pi * (D / 2) ** 2
+    v = Q / area if area != 0 else 0
+    Re = (rho * v * D) / mu_app if mu_app != 0 else 0
+
+    return {
+        'model': 'Newtonian',
+        'mu': mu,
+        'mu_app': mu_app,
+        'Re': Re,
+        'r2': r2,
+        'equation': f"σ = {mu:.4g}·γ̇"
+    }
 
 def fit_power_law(gamma_dot, sigma):
     def model(gamma_dot, k, n): return k * gamma_dot**n
@@ -30,9 +49,9 @@ def fit_bingham(gamma_dot, sigma):
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
     return {'model': 'Bingham Plastic', 'sigma0': popt[0], 'mu': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
 
-def fit_all_models(gamma_dot, sigma):
+def fit_all_models(gamma_dot, sigma, Q=1, D=1, rho=1):
     models = [
-        fit_newtonian(gamma_dot, sigma),
+        fit_newtonian(gamma_dot, sigma, Q, D, rho),
         fit_power_law(gamma_dot, sigma),
         fit_herschel_bulkley(gamma_dot, sigma),
         fit_casson(gamma_dot, sigma),
@@ -43,9 +62,13 @@ def fit_all_models(gamma_dot, sigma):
 @app.route('/fit', methods=['POST'])
 def fit():
     data = request.get_json()
-    gamma_dot = np.array(data['shear_rate'], dtype=float)
-    sigma = np.array(data['shear_stress'], dtype=float)
-    result = fit_all_models(gamma_dot, sigma)
+    gamma_dot = np.array(data.get('shear_rate', []), dtype=float)
+    sigma = np.array(data.get('shear_stress', []), dtype=float)
+    Q = float(data.get("flow_rate", 1))
+    D = float(data.get("pipe_diameter", 1))
+    rho = float(data.get("density", 1))
+
+    result = fit_all_models(gamma_dot, sigma, Q, D, rho)
     return jsonify(result)
 
 if __name__ == '__main__':
