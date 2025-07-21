@@ -160,21 +160,14 @@ def select_best_model(models):
 
 @app.route('/fit', methods=['POST'])
 def fit():
-    try:
-        data = request.get_json()
-        gamma_dot = np.array(data['shear_rate'], dtype=float)
-        sigma = np.array(data['shear_stress'], dtype=float)
-        result = fit_all_models(gamma_dot, sigma)
-        return jsonify(result)
-    except Exception as e:
-        logging.error(f"Failed to process request: {e}")
-        return jsonify({'error': str(e)}), 400
-
+    data = request.get_json()
+    gamma_dot = np.array(data['shear_rate'], dtype=float)
+    sigma = np.array(data['shear_stress'], dtype=float)
+    result = fit_all_models(gamma_dot, sigma)
+    return jsonify(result)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
-
 
 
  
