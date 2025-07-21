@@ -8,27 +8,62 @@ app = Flask(__name__)
 def fit_newtonian(gamma_dot, sigma):
     def model(g, mu): return mu * g
     popt, _ = curve_fit(model, gamma_dot, sigma)
-    return {'model': 'Newtonian', 'mu': popt[0], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    return {
+        'model': 'Newtonian',
+        'sigma0': 0,
+        'mu': popt[0],
+        'k': None,
+        'n': 1,
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
 
 def fit_power_law(gamma_dot, sigma):
     def model(g, k, n): return k * g**n
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Power Law', 'k': popt[0], 'n': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    return {
+        'model': 'Power Law',
+        'sigma0': 0,
+        'mu': None,
+        'k': popt[0],
+        'n': popt[1],
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
 
 def fit_bingham(gamma_dot, sigma):
-    def model(g, tau0, mu): return tau0 + mu * g
+    def model(g, sigma0, mu): return sigma0 + mu * g
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Bingham Plastic', 'sigma0': popt[0], 'mu': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    return {
+        'model': 'Bingham Plastic',
+        'sigma0': popt[0],
+        'mu': popt[1],
+        'k': None,
+        'n': 1,
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
 
 def fit_herschel_bulkley(gamma_dot, sigma):
     def model(g, sigma0, k, n): return sigma0 + k * g**n
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Herschel–Bulkley', 'sigma0': popt[0], 'k': popt[1], 'n': popt[2], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    return {
+        'model': 'Herschel–Bulkley',
+        'sigma0': popt[0],
+        'mu': None,
+        'k': popt[1],
+        'n': popt[2],
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
 
 def fit_casson(gamma_dot, sigma):
     def model(g, sigma0, k): return (np.sqrt(sigma0) + np.sqrt(k * g))**2
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
-    return {'model': 'Casson', 'sigma0': popt[0], 'k': popt[1], 'r2': r2_score(sigma, model(gamma_dot, *popt))}
+    return {
+        'model': 'Casson',
+        'sigma0': popt[0],
+        'mu': None,
+        'k': popt[1],
+        'n': 0.5,
+        'r2': r2_score(sigma, model(gamma_dot, *popt))
+    }
 
 def select_best_model(models):
     r2s = {m['model']: m['r2'] for m in models}
@@ -44,23 +79,13 @@ def select_best_model(models):
     if all_high:
         return next(m for m in models if m['model'] == 'Newtonian')
 
-    other_r2s = {
-        'Newtonian': r2_newtonian,
-        'Power Law': r2_power,
-        'Bingham Plastic': r2_bingham,
-        'Casson': r2_casson
-    }
-
-    # Power Law preferred if tied with HB and both higher than all others
-    if abs(r2_power - r2_hb) < 1e-4 and r2_power > max(v for k, v in other_r2s.items() if k not in ['Power Law']):
+    if abs(r2_power - r2_hb) < 1e-4 and r2_power > max(v for k, v in r2s.items() if k not in ['Power Law', 'Herschel–Bulkley']):
         return next(m for m in models if m['model'] == 'Power Law')
 
-    # Bingham preferred if tied with HB and both higher than all others
-    if abs(r2_bingham - r2_hb) < 1e-4 and r2_bingham > max(v for k, v in other_r2s.items() if k not in ['Bingham Plastic']):
+    if abs(r2_bingham - r2_hb) < 1e-4 and r2_bingham > max(v for k, v in r2s.items() if k not in ['Bingham Plastic', 'Herschel–Bulkley']):
         return next(m for m in models if m['model'] == 'Bingham Plastic')
 
     return ranked[0]
-
 
 @app.route('/fit', methods=['POST'])
 def fit():
@@ -82,7 +107,10 @@ def fit():
             'best_model': best_model,
             'all_models': models
         })
+
     except Exception as e:
+        import traceback
+        print(traceback.format_exc())  # Log full error for debugging
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
