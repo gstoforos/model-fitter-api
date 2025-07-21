@@ -6,7 +6,7 @@ from sklearn.metrics import r2_score
 app = Flask(__name__)
 
 def fit_newtonian(gamma_dot, sigma):
-    def model(g, mu): return mu * g
+    def model(gamma_dot, mu): return mu * gamma_dot
     popt, _ = curve_fit(model, gamma_dot, sigma)
     return {
         'model': 'Newtonian',
@@ -18,7 +18,7 @@ def fit_newtonian(gamma_dot, sigma):
     }
 
 def fit_power_law(gamma_dot, sigma):
-    def model(g, k, n): return k * g**n
+    def model(gamma_dot, k, n): return k * gamma_dot**n
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
     return {
         'model': 'Power Law',
@@ -30,7 +30,7 @@ def fit_power_law(gamma_dot, sigma):
     }
 
 def fit_bingham(gamma_dot, sigma):
-    def model(g, sigma0, mu): return sigma0 + mu * g
+    def model(gamma_dot, sigma0, mu): return sigma0 + mu * gamma_dot
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
     return {
         'model': 'Bingham Plastic',
@@ -42,7 +42,7 @@ def fit_bingham(gamma_dot, sigma):
     }
 
 def fit_herschel_bulkley(gamma_dot, sigma):
-    def model(g, sigma0, k, n): return sigma0 + k * g**n
+    def model(gamma_dot, sigma0, k, n): return sigma0 + k * gamma_dot**n
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
     return {
         'model': 'Herschel–Bulkley',
@@ -54,7 +54,7 @@ def fit_herschel_bulkley(gamma_dot, sigma):
     }
 
 def fit_casson(gamma_dot, sigma):
-    def model(g, sigma0, k): return (np.sqrt(sigma0) + np.sqrt(k * g))**2
+    def model(gamma_dot, sigma0, k): return (np.sqrt(sigma0) + np.sqrt(k * gamma_dot))**2
     popt, _ = curve_fit(model, gamma_dot, sigma, bounds=(0, np.inf))
     return {
         'model': 'Casson',
@@ -64,15 +64,6 @@ def fit_casson(gamma_dot, sigma):
         'n': 0.5,
         'r2': r2_score(sigma, model(gamma_dot, *popt))
     }
-
-def fit_all_models(gamma_dot, sigma):
-    return [
-        fit_newtonian(gamma_dot, sigma),
-        fit_power_law(gamma_dot, sigma),
-        fit_herschel_bulkley(gamma_dot, sigma),
-        fit_casson(gamma_dot, sigma),
-        fit_bingham(gamma_dot, sigma)
-    ]
 
 def select_best_model(models):
     r2s = {m['model']: m['r2'] for m in models}
@@ -103,7 +94,13 @@ def fit():
         gamma_dot = np.array(data['shear_rates'], dtype=float)
         sigma = np.array(data['shear_stresses'], dtype=float)
 
-        models = fit_all_models(gamma_dot, sigma)
+        models = [
+            fit_newtonian(gamma_dot, sigma),
+            fit_power_law(gamma_dot, sigma),
+            fit_bingham(gamma_dot, sigma),
+            fit_herschel_bulkley(gamma_dot, sigma),
+            fit_casson(gamma_dot, sigma),
+        ]
         best_model = select_best_model(models)
 
         return jsonify({
